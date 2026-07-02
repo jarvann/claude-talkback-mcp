@@ -65,24 +65,31 @@ that's missing and how to install it, and every `speak` result warns you when a 
 > **Platform support:** built and tested for **WSL + Windows**. The macOS/Linux paths are
 > best-effort and less battle-tested; `check_setup` will tell you what's needed there.
 
-## Build
+## Install
+
+**From GitHub — no clone, always current:**
 
 ```bash
-npm install
-npm run build
+npm install -g github:jarvann/claude-talkback-mcp
+```
+
+**From source (for development):**
+
+```bash
+git clone https://github.com/jarvann/claude-talkback-mcp
+cd claude-talkback-mcp
+npm install && npm run build
 ```
 
 ## Register with Claude Code
 
-Point Claude Code at the compiled entry point. `--scope user` makes it available in every
-project (use `--scope project` to scope to one repo). The **same command works on native
-Windows/PowerShell** — the server auto-detects the environment.
+`--scope user` makes it available in every project (use `--scope project` to scope to one repo).
+The **same commands work on native Windows/PowerShell** — the server auto-detects the environment.
 
-**SAPI only (free, offline):**
+**Built-in voice (free, offline):**
 
 ```bash
-claude mcp add talkback --scope user \
-  -- node /home/cory/personal/claude-talkback-mcp/dist/index.js
+claude mcp add talkback --scope user -- claude-talkback-mcp
 ```
 
 **With ElevenLabs (natural voice):**
@@ -91,8 +98,12 @@ claude mcp add talkback --scope user \
 claude mcp add talkback --scope user \
   --env ELEVENLABS_API_KEY="<your-elevenlabs-key>" \
   --env TALKBACK_ENGINE="elevenlabs" \
-  -- node /home/cory/personal/claude-talkback-mcp/dist/index.js
+  -- claude-talkback-mcp
 ```
+
+> **Not installed globally?** Replace `claude-talkback-mcp` with either
+> `npx -y github:jarvann/claude-talkback-mcp` (no install), or — from a source checkout —
+> `node /path/to/claude-talkback-mcp/dist/index.js`.
 
 > Claude Code loads MCP servers at startup — after `mcp add` / changing env, **restart Claude
 > Code** (or `/mcp` → reconnect) for changes to take effect. Confirm with `/mcp`.
