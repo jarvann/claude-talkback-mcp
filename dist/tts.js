@@ -425,21 +425,48 @@ function runCapture(cmd, args) {
     });
 }
 let elevenVoiceCache = null;
+// The "sapi" engine is really "the OS's built-in, free TTS": PowerShell/SAPI on
+// Windows, the `say` command on macOS, espeak on Linux. Enumerate whichever
+// applies so voice selection + auto-pick work everywhere, not just Windows.
 async function listSapiVoices() {
-    if (PLATFORM !== "wsl" && PLATFORM !== "windows")
-        return [];
-    const ps = "Add-Type -AssemblyName System.Speech; " +
-        "(New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | " +
-        "ForEach-Object { $i = $_.VoiceInfo; \"$($i.Name)|$($i.Culture)|$($i.Gender)\" }";
-    const out = await runCapture(POWERSHELL, ["-NoProfile", "-Command", ps]);
-    return out
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .map((l) => {
-        const [name, culture, gender] = l.split("|");
-        return { name, culture, gender };
-    });
+    if (PLATFORM === "wsl" || PLATFORM === "windows") {
+        const ps = "Add-Type -AssemblyName System.Speech; " +
+            "(New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | " +
+            "ForEach-Object { $i = $_.VoiceInfo; \"$($i.Name)|$($i.Culture)|$($i.Gender)\" }";
+        const out = await runCapture(POWERSHELL, ["-NoProfile", "-Command", ps]);
+        return out
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .map((l) => {
+            const [name, culture, gender] = l.split("|");
+            return { name, culture, gender };
+        });
+    }
+    if (PLATFORM === "macos") {
+        // `say -v '?'` -> "Samantha           en_US    # Hello, my name is Samantha."
+        const out = await runCapture("say", ["-v", "?"]);
+        return out
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .map((l) => {
+            const m = l.match(/^(.+?)\s{2,}([a-z]{2}[-_][A-Z]{2})/);
+            return m ? { name: m[1].trim(), culture: m[2] } : { name: l.split(/\s{2,}/)[0] };
+        })
+            .filter((v) => v.name);
+    }
+    if (PLATFORM === "linux") {
+        // `espeak --voices` -> columns; the 4th (index 3) is the voice name.
+        const out = await runCapture("espeak", ["--voices"]);
+        return out
+            .split(/\r?\n/)
+            .slice(1)
+            .map((l) => l.trim().split(/\s+/))
+            .filter((c) => c.length >= 4)
+            .map((c) => ({ name: c[3], culture: c[1] }));
+    }
+    return [];
 }
 async function listElevenVoices() {
     if (!hasElevenKey())

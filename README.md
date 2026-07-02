@@ -7,7 +7,8 @@ it's doing out your speakers — while the full detail still scrolls in the term
 Dual output: the screen has the transcript, the voice has the gist.
 
 - **Two engines, toggle live:**
-  - `sapi` — built-in Windows voice. Offline, free, zero setup, but robotic.
+  - `sapi` — your OS's built-in voice, free and offline with zero setup: Windows SAPI, macOS
+    `say`, or Linux `espeak`. (macOS `say` sounds surprisingly good — no API key needed.)
   - `elevenlabs` — natural cloud voice. Bring your own API key.
 - **Works from WSL and native Windows** — from WSL it reaches the Windows audio stack via
   `powershell.exe` (SAPI speaks directly; ElevenLabs MP3 plays through Windows MediaPlayer), so
@@ -48,8 +49,8 @@ system audio tools — and Windows/WSL already ship them:
 - **Node.js ≥ 18.**
 - **Windows or WSL** (primary target): nothing extra. PowerShell + the built-in Windows speech
   engine handle SAPI *and* ElevenLabs MP3 playback.
-- **macOS** (experimental): `say` is built in for the free voice; `brew install ffmpeg` adds the
-  `ffplay` used for ElevenLabs playback.
+- **macOS** (experimental): the built-in `say` gives a good **free** voice out of the box — no
+  ElevenLabs needed. `brew install ffmpeg` adds the `ffplay` used only for ElevenLabs playback.
 - **Linux** (experimental): `sudo apt install espeak` for the free local voice, and
   `sudo apt install ffmpeg` for ElevenLabs playback.
 - **ElevenLabs engine** (optional): an API key in `ELEVENLABS_API_KEY` + network access.

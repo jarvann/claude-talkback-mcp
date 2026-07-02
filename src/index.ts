@@ -28,7 +28,7 @@ HOW TO USE IT:
 4. Keep turns short so the user can interrupt between them. If the user talks while you're narrating, pass interrupt:true on your next \`speak\` so the current line is cut off and you respond to them.
 5. Tone: warm, direct, first person, contractions. A collaborator, not a narrator. No preamble, no filler.
 
-Voices: each repo auto-picks its own voice on first load and remembers it, so different projects sound like different teammates. If the user asks who's talking, use \`voice_status\` to report the current voice and whether it's male/female. To change it, use \`set_voice\` — it takes a name ("brian"), a gender ("female"/"male", picks one of that gender), or "random", and saves the choice for this repo. \`list_voices\` shows the options; \`list_repo_voices\` shows which voice every repo has been assigned; \`set_engine\` toggles "sapi" (robotic, offline, free) vs "elevenlabs" (natural, needs the user's API key). If the user says they can't hear anything, call \`check_setup\` — it reports whether a required audio tool is missing and exactly how to install it.`;
+Voices: each repo auto-picks its own voice on first load and remembers it, so different projects sound like different teammates. If the user asks who's talking, use \`voice_status\` to report the current voice and whether it's male/female. To change it, use \`set_voice\` — it takes a name ("brian"), a gender ("female"/"male", picks one of that gender), or "random", and saves the choice for this repo. \`list_voices\` shows the options; \`list_repo_voices\` shows which voice every repo has been assigned; \`set_engine\` toggles "sapi" (the OS's built-in free voice — SAPI on Windows, say on macOS, espeak on Linux) vs "elevenlabs" (natural, needs the user's API key). If the user says they can't hear anything, call \`check_setup\` — it reports whether a required audio tool is missing and exactly how to install it.`;
 
 const server = new McpServer(
   { name: "claude-talkback", version: "0.3.0" },
@@ -206,7 +206,7 @@ server.registerTool(
   {
     title: "Switch speech engine",
     description:
-      "Toggle the speech engine. 'sapi' = built-in Windows voice (robotic, offline, free). 'elevenlabs' = natural cloud voice (needs the user's ELEVENLABS_API_KEY in the server env).",
+      "Toggle the speech engine. 'sapi' = your OS's built-in, free, offline voice (Windows SAPI, macOS 'say', or Linux espeak). 'elevenlabs' = natural cloud voice (needs the user's ELEVENLABS_API_KEY in the server env).",
     inputSchema: {
       engine: z.enum(["sapi", "elevenlabs"]).describe("Which engine to use."),
     },
