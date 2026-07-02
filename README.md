@@ -1,5 +1,7 @@
 # claude-talkback-mcp
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Gives Claude Code a **voice**. It speaks short, conversational, peer-style summaries of what
 it's doing out your speakers — while the full detail still scrolls in the terminal as usual.
 Dual output: the screen has the transcript, the voice has the gist.
@@ -15,6 +17,15 @@ Dual output: the screen has the transcript, the voice has the gist.
   current one (barge-in) so it pivots to you mid-sentence.
 - **Graceful fallback** — if an ElevenLabs call fails (quota, tier-locked voice, network), it
   automatically falls back to SAPI so you're never left in silence.
+
+## Demo
+
+Hear the difference — click to listen/download (GitHub doesn't autoplay audio inline):
+
+- ▶️ **Natural voice (ElevenLabs):** [`assets/demo-elevenlabs.mp3`](assets/demo-elevenlabs.mp3)
+- ▶️ **Free built-in voice (Windows SAPI):** [`assets/demo-sapi.wav`](assets/demo-sapi.wav)
+
+<sub>ElevenLabs sample generated with <a href="https://elevenlabs.io">ElevenLabs</a>.</sub>
 
 ## Tools
 
@@ -111,3 +122,7 @@ The server ships **instructions** (surfaced to Claude Code on connect) telling C
 > single foreground operation it isn't running, so there's no true simultaneous chat *within*
 > one call. The conversational feel comes from Claude **backgrounding** slow work so turns stay
 > short and control returns to you frequently. That behavior lives in the instructions above.
+
+## License
+
+[MIT](LICENSE) © Cory Loriot

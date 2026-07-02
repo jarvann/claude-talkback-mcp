@@ -1,7 +1,28 @@
 {
   "name": "claude-talkback-mcp",
   "version": "0.1.0",
-  "description": "MCP server that gives Claude Code a conversational voice. Speaks short, peer-style summaries aloud via Windows SAPI (works from WSL and native Windows; best-effort espeak/say elsewhere).",
+  "description": "MCP server that gives Claude Code a conversational voice — speaks short, peer-style summaries aloud. Two engines (Windows SAPI + ElevenLabs), works from WSL and native Windows.",
+  "license": "MIT",
+  "author": "Cory Loriot",
+  "homepage": "https://github.com/jarvann/claude-talkback-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jarvann/claude-talkback-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jarvann/claude-talkback-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-code",
+    "text-to-speech",
+    "tts",
+    "elevenlabs",
+    "sapi",
+    "voice",
+    "wsl"
+  ],
   "type": "module",
   "bin": {
     "claude-talkback-mcp": "dist/index.js"
