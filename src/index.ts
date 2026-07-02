@@ -9,8 +9,11 @@ import {
   setVoice,
   resolveVoice,
   getActiveVoice,
+  getActiveVoiceInfo,
+  getRepoRegistry,
   getEngine,
   setEngine,
+  ensureInitialized,
   backendInfo,
 } from "./tts.js";
 
@@ -23,10 +26,10 @@ HOW TO USE IT:
 4. Keep turns short so the user can interrupt between them. If the user talks while you're narrating, pass interrupt:true on your next \`speak\` so the current line is cut off and you respond to them.
 5. Tone: warm, direct, first person, contractions. A collaborator, not a narrator. No preamble, no filler.
 
-Voices: \`list_voices\` / \`set_voice\`. Engine: \`set_engine\` toggles between "sapi" (robotic, offline, free) and "elevenlabs" (natural, needs the user's API key).`;
+Voices: each repo auto-picks its own voice on first load and remembers it, so different projects sound like different teammates. If the user asks who's talking, use \`voice_status\` to report the current voice and whether it's male/female. To change it, use \`set_voice\` — it takes a name ("brian"), a gender ("female"/"male", picks one of that gender), or "random", and saves the choice for this repo. \`list_voices\` shows the options; \`list_repo_voices\` shows which voice every repo has been assigned; \`set_engine\` toggles "sapi" (robotic, offline, free) vs "elevenlabs" (natural, needs the user's API key).`;
 
 const server = new McpServer(
-  { name: "claude-talkback", version: "0.2.0" },
+  { name: "claude-talkback", version: "0.3.0" },
   { instructions: INSTRUCTIONS },
 );
 
@@ -101,23 +104,67 @@ server.registerTool(
   {
     title: "Set the active voice",
     description:
-      "Set the voice for the active engine. Accepts an exact name/id or a partial match (e.g. 'brian' or 'zira'). Use list_voices to see options.",
+      "Set the voice for the active engine and remember it for this repo. Accepts an exact name/id, a partial name ('brian', 'jessica'), a gender ('female' or 'male' → picks a random voice of that gender), or 'random'. Use list_voices to see options.",
     inputSchema: {
-      name: z.string().describe("Voice name, exact or partial (case-insensitive)."),
+      name: z
+        .string()
+        .describe("A voice name/id, a partial name, a gender ('female'/'male'), or 'random'."),
     },
   },
   async ({ name }) => {
-    const resolved = await setVoice(name);
+    const v = await setVoice(name);
+    if (!v) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `No voice matched "${name}" for the ${getEngine()} engine. Try list_voices.`,
+          },
+        ],
+      };
+    }
+    const g = v.gender ? ` (${v.gender})` : "";
     return {
-      content: [
-        {
-          type: "text",
-          text: resolved
-            ? `✅ Voice set to "${resolved}".`
-            : `No voice matched "${name}" for the ${getEngine()} engine. Try list_voices.`,
-        },
-      ],
+      content: [{ type: "text", text: `✅ Voice set to "${v.name}"${g} — saved for this repo.` }],
     };
+  },
+);
+
+server.registerTool(
+  "voice_status",
+  {
+    title: "Current voice & engine",
+    description:
+      "Report the active engine and current voice, including whether it's male or female (when known). Use to answer 'which voice are you using?' or 'am I male or female right now?'.",
+    inputSchema: {},
+  },
+  async () => {
+    const v = await getActiveVoiceInfo();
+    const name = v?.name ?? "unknown";
+    const gender = v?.gender ? `, ${v.gender}` : "";
+    return { content: [{ type: "text", text: `Engine: ${getEngine()} — voice: ${name}${gender}` }] };
+  },
+);
+
+server.registerTool(
+  "list_repo_voices",
+  {
+    title: "Voices assigned across repos",
+    description:
+      "Show the central registry of which voice each repo/project has been assigned (the → marks this repo). Useful for seeing what's already in use so voices stay distinct across projects.",
+    inputSchema: {},
+  },
+  async () => {
+    const rows = await getRepoRegistry();
+    if (rows.length === 0) {
+      return { content: [{ type: "text", text: "No repos have picked a voice yet." }] };
+    }
+    const lines = rows.map((r) => {
+      const mark = r.current ? "→ " : "  ";
+      const gender = r.gender ? `, ${r.gender}` : "";
+      return `${mark}${r.repo}  —  ${r.name}${gender} [${r.engine}]`;
+    });
+    return { content: [{ type: "text", text: `Voices by repo:\n${lines.join("\n")}` }] };
   },
 );
 
@@ -139,4 +186,5 @@ server.registerTool(
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+await ensureInitialized(); // pick/restore this repo's voice before the first line
 process.stderr.write(`[talkback] ready — backend: ${backendInfo()}\n`);

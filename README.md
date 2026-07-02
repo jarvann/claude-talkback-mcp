@@ -34,8 +34,10 @@ Hear the difference — click to listen/download (GitHub doesn't autoplay audio 
 | `speak` | Speak one or two short sentences. `interrupt:true` cuts off current speech; `voice` overrides for that line. |
 | `stop_speaking` | Immediately silence and clear the queue. |
 | `list_voices` | List every voice available for the **active engine** (★ = active). |
-| `set_voice` | Set the active voice by exact name/id or partial match (`"jessica"`, `"brian"`, `"zira"`). |
+| `set_voice` | Set + remember the voice for this repo. Takes a name/id, a partial (`"jessica"`), a **gender** (`"female"`/`"male"` → random of that gender), or `"random"`. |
 | `set_engine` | Toggle between `sapi` and `elevenlabs` at runtime. |
+| `voice_status` | Report the active engine + current voice, including whether it's male or female. |
+| `list_repo_voices` | Show the central registry — which voice each repo/project has been assigned. |
 
 ## Build
 
@@ -104,6 +106,33 @@ On a **free** ElevenLabs plan, only the ~21 **premade** voices work through the 
 though they work in the ElevenLabs app — using them here needs a paid plan (Starter and up). When
 that happens the server logs it and falls back to SAPI for that line. Once you upgrade,
 `set_voice ava` works with no code changes.
+
+## Per-repo voices (a different voice per project)
+
+Every repo automatically gets its **own** voice, so when you have multiple Claude Code windows
+open you can tell them apart by ear — like different teammates.
+
+- **Auto-assigned on first load.** The first time the server starts in a repo, it picks a voice at
+  random and remembers it — preferring one **no other repo is already using**, so projects stay
+  distinct until you run out of voices.
+- **Persistent.** Choices are saved to `~/.claude-talkback/repos.json`, keyed by repo path, so a
+  repo keeps its voice across restarts. (Override the location with `TALKBACK_STATE_DIR`.)
+- **Change it anytime.** Ask Claude to switch — `set_voice` takes a name (`"brian"`), a gender
+  (`"female"` / `"male"` → a random voice of that gender), or `"random"`, and saves the new pick
+  for that repo. `voice_status` says which voice/gender is active right now.
+- **See the whole map.** `list_repo_voices` prints the central registry (the `→` marks the current
+  repo):
+
+  ```
+  Voices by repo:
+    /work/repoA  —  Callum - Husky Trickster, male [elevenlabs]
+  → /work/repoB  —  Alice - Clear, Engaging Educator, female [elevenlabs]
+    /work/repoC  —  Liam - Energetic, Social Media Creator, male [elevenlabs]
+  ```
+
+Auto-pick only draws from **free-tier premade** ElevenLabs voices, so it never lands on a
+tier-locked one. To pin a repo to a specific voice, set `ELEVENLABS_VOICE_ID` in that repo's
+registration — an explicit pin always wins and is never overwritten.
 
 ## How the conversational behavior works
 

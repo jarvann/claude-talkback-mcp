@@ -1,6 +1,6 @@
 {
   "name": "claude-talkback-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "MCP server that gives Claude Code a conversational voice — speaks short, peer-style summaries aloud. Two engines (Windows SAPI + ElevenLabs), works from WSL and native Windows.",
   "license": "MIT",
   "author": "Cory Loriot",

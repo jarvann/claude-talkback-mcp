@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export type Platform = "wsl" | "windows" | "macos" | "linux" | "unknown";
 export type Engine = "sapi" | "elevenlabs";
@@ -10,6 +12,7 @@ export interface Voice {
   id?: string; // ElevenLabs voice_id (SAPI voices have no id)
   culture?: string;
   gender?: string;
+  category?: string; // ElevenLabs: "premade" | "professional" | ...
 }
 
 function detectPlatform(): Platform {
@@ -45,7 +48,8 @@ const MAX_CHARS = envInt("TALKBACK_MAX_CHARS", 600, 80, 4000);
 // ElevenLabs config (key is Bring-Your-Own via env).
 const ELEVEN_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
 const ELEVEN_FORMAT = process.env.ELEVENLABS_FORMAT || "mp3_44100_128";
-const ELEVEN_DEFAULT_VOICE = process.env.ELEVENLABS_VOICE_ID || "cgSgspJ2msm6clMCkdW9"; // Jessica (premade, free-tier)
+const ELEVEN_FALLBACK_VOICE = "cgSgspJ2msm6clMCkdW9"; // Jessica — last resort if auto-pick can't run
+const ELEVEN_ENV_VOICE = process.env.ELEVENLABS_VOICE_ID?.trim() || null; // explicit per-repo pin
 const ELEVEN_SPEED = envFloat("ELEVENLABS_SPEED", 0.9, 0.7, 1.2); // <1 = slower, less rushed
 const ELEVEN_STABILITY = envFloat("ELEVENLABS_STABILITY", 0.5, 0, 1);
 const ELEVEN_SIMILARITY = envFloat("ELEVENLABS_SIMILARITY", 0.75, 0, 1);
@@ -56,7 +60,113 @@ const hasElevenKey = () => !!process.env.ELEVENLABS_API_KEY;
 let engine: Engine =
   (process.env.TALKBACK_ENGINE as Engine) || (hasElevenKey() ? "elevenlabs" : "sapi");
 let sapiVoice: string | null = process.env.TALKBACK_VOICE?.trim() || null;
-let elevenVoiceId: string = ELEVEN_DEFAULT_VOICE;
+let elevenVoiceId: string = ELEVEN_ENV_VOICE ?? ELEVEN_FALLBACK_VOICE;
+
+// ---- per-repo voice persistence ---------------------------------------------
+// Each repo (keyed by the directory Claude Code launched us in) remembers the
+// voice it was assigned, so it keeps the same "teammate" voice across restarts.
+const STATE_DIR = process.env.TALKBACK_STATE_DIR || join(homedir(), ".claude-talkback");
+const STATE_FILE = join(STATE_DIR, "repos.json");
+const REPO_ID = process.env.TALKBACK_REPO_ID || process.cwd();
+
+function loadRepoState(): Record<string, string> {
+  try {
+    return JSON.parse(readFileSync(STATE_FILE, "utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function loadRepoVoice(forEngine: Engine): string | undefined {
+  return loadRepoState()[`${forEngine}:${REPO_ID}`];
+}
+
+function saveRepoVoice(forEngine: Engine, voice: string): void {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    const state = loadRepoState();
+    state[`${forEngine}:${REPO_ID}`] = voice;
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (err) {
+    process.stderr.write(`[talkback] could not persist voice: ${(err as Error).message}\n`);
+  }
+}
+
+const pickRandom = <T>(arr: T[]): T | undefined =>
+  arr.length ? arr[Math.floor(Math.random() * arr.length)] : undefined;
+
+// Voices safe to auto-assign: on ElevenLabs, only free-tier "premade" voices
+// (professional/library voices 402 on free plans). SAPI: all installed voices.
+function usablePool(voices: Voice[]): Voice[] {
+  return engine === "elevenlabs"
+    ? voices.filter((v) => (v.category ?? "premade") === "premade" && v.id)
+    : voices;
+}
+
+const voiceToken = (v: Voice, forEngine: Engine): string =>
+  forEngine === "elevenlabs" ? v.id ?? "" : v.name;
+
+/** Voice tokens already assigned to OTHER repos for a given engine. */
+function usedVoicesForEngine(forEngine: Engine): Set<string> {
+  const mine = `${forEngine}:${REPO_ID}`;
+  const prefix = `${forEngine}:`;
+  const used = new Set<string>();
+  for (const [key, token] of Object.entries(loadRepoState())) {
+    if (key.startsWith(prefix) && key !== mine) used.add(token);
+  }
+  return used;
+}
+
+/** Prefer a voice no other repo is using, so projects stay distinct teammates. */
+function pickFreshVoice(pool: Voice[], forEngine: Engine): Voice | undefined {
+  const used = usedVoicesForEngine(forEngine);
+  const fresh = pool.filter((v) => !used.has(voiceToken(v, forEngine)));
+  return pickRandom(fresh.length ? fresh : pool);
+}
+
+let initialized = false;
+
+/**
+ * On first use in a repo: reuse the voice saved for this repo, or (if none)
+ * randomly pick one and save it. An explicit env pin always wins and is never
+ * overwritten. Safe to call repeatedly — only the first call does work.
+ */
+export async function ensureInitialized(): Promise<void> {
+  if (initialized) return;
+  initialized = true;
+  try {
+    if (engine === "elevenlabs") {
+      if (ELEVEN_ENV_VOICE || !hasElevenKey()) return; // pinned, or can't list — keep current
+      const saved = loadRepoVoice("elevenlabs");
+      if (saved) {
+        elevenVoiceId = saved;
+        return;
+      }
+      const pick = pickFreshVoice(usablePool(await listVoices()), "elevenlabs");
+      if (pick?.id) {
+        elevenVoiceId = pick.id;
+        saveRepoVoice("elevenlabs", pick.id);
+        process.stderr.write(
+          `[talkback] auto-assigned this repo the voice "${pick.name}" (${pick.gender ?? "?"})\n`,
+        );
+      }
+    } else {
+      if (sapiVoice) return; // explicit env voice — keep
+      const saved = loadRepoVoice("sapi");
+      if (saved) {
+        sapiVoice = saved;
+        return;
+      }
+      const pick = pickFreshVoice(usablePool(await listVoices()), "sapi");
+      if (pick) {
+        sapiVoice = pick.name;
+        saveRepoVoice("sapi", pick.name);
+      }
+    }
+  } catch (err) {
+    process.stderr.write(`[talkback] voice init failed: ${(err as Error).message}\n`);
+  }
+}
 
 /** Strip markdown/URLs/code so speech stays clean, and cap length as a safety net. */
 export function tidyForSpeech(raw: string): string {
@@ -265,6 +375,7 @@ async function fetchEleven(text: string, voiceId: string, signal: AbortSignal): 
 async function pump(): Promise<void> {
   if (playing) return;
   playing = true;
+  await ensureInitialized();
   while (queue.length > 0) {
     const item = queue.shift()!;
     const abort = new AbortController();
@@ -389,8 +500,20 @@ async function listElevenVoices(): Promise<Voice[]> {
     headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY! },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = (await res.json()) as { voices?: Array<{ name: string; voice_id: string }> };
-  elevenVoiceCache = (data.voices || []).map((v) => ({ name: v.name, id: v.voice_id }));
+  const data = (await res.json()) as {
+    voices?: Array<{
+      name: string;
+      voice_id: string;
+      category?: string;
+      labels?: Record<string, string>;
+    }>;
+  };
+  elevenVoiceCache = (data.voices || []).map((v) => ({
+    name: v.name,
+    id: v.voice_id,
+    category: v.category,
+    gender: v.labels?.gender,
+  }));
   return elevenVoiceCache;
 }
 
@@ -420,24 +543,103 @@ export async function resolveVoice(query: string): Promise<string | null> {
   return engine === "elevenlabs" ? match.id ?? null : match.name;
 }
 
-/**
- * Set the active voice for the current engine. Accepts an exact name/id or a
- * case-insensitive partial name. Returns the resolved full name, or null.
- */
-export async function setVoice(query: string): Promise<string | null> {
-  const match = matchVoice(await listVoices(), query);
-  if (!match) return null;
+function applyVoice(v: Voice): void {
   if (engine === "elevenlabs") {
-    if (!match.id) return null;
-    elevenVoiceId = match.id;
+    if (!v.id) return;
+    elevenVoiceId = v.id;
+    saveRepoVoice("elevenlabs", v.id);
   } else {
-    sapiVoice = match.name;
+    sapiVoice = v.name;
+    saveRepoVoice("sapi", v.name);
   }
-  return match.name;
+}
+
+/**
+ * Set the active voice for the current engine and remember it for this repo.
+ * Accepts:
+ *  - an exact name/id or partial name ("brian", "jessica")
+ *  - a gender ("female" / "male") — picks a random voice of that gender
+ *  - "random" / "any" / "surprise me" — picks any usable voice
+ * Returns the chosen Voice (name + gender), or null if nothing matched.
+ */
+export async function setVoice(query: string): Promise<Voice | null> {
+  const q = query.trim().toLowerCase();
+  const voices = await listVoices();
+  const pool = usablePool(voices);
+  const wantGender = /\bfemale\b|\bwoman\b/.test(q)
+    ? "female"
+    : /\bmale\b|\bman\b/.test(q)
+      ? "male"
+      : null;
+  const wantRandom = /\brandom\b|\bany\b|surprise/.test(q);
+
+  let match: Voice | null = null;
+  if (wantGender || wantRandom) {
+    const filtered = wantGender
+      ? pool.filter((v) => (v.gender ?? "").toLowerCase().startsWith(wantGender))
+      : pool;
+    match = pickRandom(filtered) ?? null;
+  }
+  if (!match) match = matchVoice(voices, query); // explicit name/id (may be non-premade)
+  if (!match) return null;
+  applyVoice(match);
+  return match;
 }
 
 export function getActiveVoice(): string | null {
   return engine === "elevenlabs" ? elevenVoiceId : sapiVoice;
+}
+
+/** The currently active voice, with gender if known. */
+export async function getActiveVoiceInfo(): Promise<Voice | null> {
+  const active = getActiveVoice();
+  if (!active) return null;
+  const voices = await listVoices();
+  return voices.find((v) => v.id === active || v.name === active) ?? { name: active };
+}
+
+export interface RepoVoiceEntry {
+  repo: string;
+  engine: Engine;
+  name: string;
+  gender?: string;
+  current: boolean;
+}
+
+/**
+ * The central registry: every repo that has picked a voice, with the voice
+ * resolved to a display name. Lets you see what's assigned where and what's
+ * already in use across projects.
+ */
+export async function getRepoRegistry(): Promise<RepoVoiceEntry[]> {
+  const state = loadRepoState();
+  const elevenById = new Map<string, Voice>();
+  const sapiByName = new Map<string, Voice>();
+  try {
+    if (hasElevenKey()) for (const v of await listElevenVoices()) if (v.id) elevenById.set(v.id, v);
+  } catch {
+    /* eleven list unavailable — fall back to raw ids */
+  }
+  try {
+    for (const v of await listSapiVoices()) sapiByName.set(v.name, v);
+  } catch {
+    /* sapi list unavailable */
+  }
+  const rows: RepoVoiceEntry[] = [];
+  for (const [key, token] of Object.entries(state)) {
+    const sep = key.indexOf(":");
+    const eng = key.slice(0, sep) as Engine;
+    const repo = key.slice(sep + 1);
+    const resolved = eng === "elevenlabs" ? elevenById.get(token) : sapiByName.get(token);
+    rows.push({
+      repo,
+      engine: eng,
+      name: resolved?.name ?? token,
+      gender: resolved?.gender,
+      current: repo === REPO_ID && eng === engine,
+    });
+  }
+  return rows.sort((a, b) => a.repo.localeCompare(b.repo));
 }
 
 export function backendInfo(): string {
