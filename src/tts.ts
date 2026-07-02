@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -372,6 +372,111 @@ async function fetchEleven(text: string, voiceId: string, signal: AbortSignal): 
   return Buffer.from(await res.arrayBuffer());
 }
 
+// ---- cross-process audio lock ----------------------------------------------
+// Every Claude Code window runs its own talkback process. Without coordination
+// they'd play audio simultaneously and talk over each other. A shared lockfile
+// makes all instances on this machine take turns on the speakers — one voice at
+// a time. Crash-safe: a lock whose holder PID is dead (or is very old) is
+// reclaimed, and waiting never mutes an agent for longer than the timeout.
+const LOCK_FILE = join(STATE_DIR, "speaking.lock");
+const LOCK_MAX_HOLD_MS = 60_000; // reclaim a lock held longer than this (stuck holder)
+const LOCK_WAIT_TIMEOUT_MS = 30_000; // fail open after this so no agent is ever muted
+const AUDIO_LOCK_DISABLED = process.env.TALKBACK_NO_AUDIO_LOCK === "1";
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM"; // exists, just not ours to signal
+  }
+}
+
+function readLock(): { pid: number; ts: number } | null {
+  try {
+    return JSON.parse(readFileSync(LOCK_FILE, "utf8")) as { pid: number; ts: number };
+  } catch {
+    return null;
+  }
+}
+
+function writeLock(): boolean {
+  try {
+    const fd = openSync(LOCK_FILE, "wx"); // atomic exclusive create — fails if it exists
+    closeSync(fd);
+    writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tryAcquireLock(): boolean {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+  } catch {
+    /* ignore */
+  }
+  if (writeLock()) return true;
+  // Held by someone — reclaim if that holder is dead or the lock is stale.
+  const cur = readLock();
+  const stale = !cur || Date.now() - cur.ts > LOCK_MAX_HOLD_MS || !pidAlive(cur.pid);
+  if (stale) {
+    try {
+      unlinkSync(LOCK_FILE);
+    } catch {
+      /* someone else got there first */
+    }
+    return writeLock();
+  }
+  return false;
+}
+
+const lockDebug = (msg: string) => {
+  if (process.env.TALKBACK_DEBUG_LOCK) {
+    process.stderr.write(`[talkback] audio-lock ${msg} pid=${process.pid} t=${Date.now()}\n`);
+  }
+};
+
+async function acquireAudioLock(signal: AbortSignal): Promise<void> {
+  if (AUDIO_LOCK_DISABLED) return;
+  const start = Date.now();
+  while (!tryAcquireLock()) {
+    if (signal.aborted) return;
+    if (Date.now() - start > LOCK_WAIT_TIMEOUT_MS) {
+      lockDebug("timeout-open"); // fail open — better to overlap than go silent
+      return;
+    }
+    await sleep(90 + Math.floor(Math.random() * 90)); // jitter avoids a thundering herd
+  }
+  lockDebug(`acquired (waited ${Date.now() - start}ms)`);
+}
+
+function releaseAudioLock(): void {
+  if (AUDIO_LOCK_DISABLED) return;
+  const cur = readLock();
+  if (cur && cur.pid === process.pid) {
+    try {
+      unlinkSync(LOCK_FILE);
+    } catch {
+      /* already gone */
+    }
+    lockDebug("released");
+  }
+}
+
+/** Play one clip while holding the machine-wide audio lock, so agents take turns. */
+async function playLocked(spec: Spec | null, input: Buffer, abort: AbortController): Promise<void> {
+  await acquireAudioLock(abort.signal);
+  try {
+    await runPlayer(spec, input, abort);
+  } finally {
+    releaseAudioLock();
+  }
+}
+
 async function pump(): Promise<void> {
   if (playing) return;
   playing = true;
@@ -394,17 +499,17 @@ async function pump(): Promise<void> {
           );
           if (fatal) {
             engine = "sapi"; // stay on SAPI; stop retrying the exhausted/broken API
-            await runPlayer(sapiSpec(null), Buffer.from(fallbackNotice(err), "utf8"), abort);
+            await playLocked(sapiSpec(null), Buffer.from(fallbackNotice(err), "utf8"), abort);
           }
         }
         if (abort.signal.aborted) continue;
         if (audio) {
-          await runPlayer(mp3PlayerSpec(), audio, abort);
+          await playLocked(mp3PlayerSpec(), audio, abort);
         } else {
-          await runPlayer(sapiSpec(null), Buffer.from(item.text, "utf8"), abort);
+          await playLocked(sapiSpec(null), Buffer.from(item.text, "utf8"), abort);
         }
       } else {
-        await runPlayer(sapiSpec(item.voice ?? sapiVoice), Buffer.from(item.text, "utf8"), abort);
+        await playLocked(sapiSpec(item.voice ?? sapiVoice), Buffer.from(item.text, "utf8"), abort);
       }
     } catch (err) {
       if (!abort.signal.aborted) {

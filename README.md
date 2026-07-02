@@ -22,6 +22,9 @@ Dual output: the screen has the transcript, the voice has the gist.
   current one (barge-in) so it pivots to you mid-sentence.
 - **Graceful fallback** — if an ElevenLabs call fails (quota, tier-locked voice, network), it
   automatically falls back to SAPI so you're never left in silence.
+- **Agents take turns** — multiple Claude Code windows each run their own talkback process, so
+  they coordinate through a shared lockfile and never talk over each other: one voice plays at a
+  time, machine-wide. Combined with per-repo voices, you always know which agent is speaking.
 
 ## Demo
 
@@ -116,6 +119,7 @@ claude mcp add talkback --scope user \
 |-----|---------|---------|
 | `TALKBACK_ENGINE` | `elevenlabs` if a key is set, else `sapi` | Which engine to start on. |
 | `TALKBACK_MAX_CHARS` | `600` | Hard cap on spoken length — safety net so nothing long is read aloud. |
+| `TALKBACK_NO_AUDIO_LOCK` | (off) | Set to `1` to disable cross-agent coordination and let windows play audio at the same time. |
 
 **SAPI**
 
