@@ -93,7 +93,7 @@ claude mcp add talkback --scope user \
 |-----|---------|---------|
 | `ELEVENLABS_API_KEY` | — | Your key (required for the `elevenlabs` engine). |
 | `ELEVENLABS_VOICE_ID` | Jessica (`cgSgspJ2msm6clMCkdW9`) | Default voice id. |
-| `ELEVENLABS_MODEL` | `eleven_turbo_v2_5` | TTS model. |
+| `ELEVENLABS_MODEL` | `eleven_flash_v2_5` | TTS model. Flash = fastest (~75ms) and half-price; use `eleven_multilingual_v2` or `eleven_v3` for richer, more expressive quality (slower, full price). |
 | `ELEVENLABS_FORMAT` | `mp3_44100_128` | Output format (PCM needs a paid tier). |
 | `ELEVENLABS_SPEED` | `0.9` | Pacing, `0.7`–`1.2`. `<1` = slower/less rushed. |
 | `ELEVENLABS_STABILITY` | `0.5` | `0`–`1`. Higher = more consistent delivery. |

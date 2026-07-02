@@ -46,7 +46,7 @@ const RATE = envInt("TALKBACK_RATE", 1, -10, 10);
 const MAX_CHARS = envInt("TALKBACK_MAX_CHARS", 600, 80, 4000);
 
 // ElevenLabs config (key is Bring-Your-Own via env).
-const ELEVEN_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
+const ELEVEN_MODEL = process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5"; // fastest (~75ms), half-price
 const ELEVEN_FORMAT = process.env.ELEVENLABS_FORMAT || "mp3_44100_128";
 const ELEVEN_FALLBACK_VOICE = "cgSgspJ2msm6clMCkdW9"; // Jessica — last resort if auto-pick can't run
 const ELEVEN_ENV_VOICE = process.env.ELEVENLABS_VOICE_ID?.trim() || null; // explicit per-repo pin
