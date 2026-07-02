@@ -10,9 +10,13 @@ Dual output: the screen has the transcript, the voice has the gist.
   - `sapi` — your OS's built-in voice, free and offline with zero setup: Windows SAPI, macOS
     `say`, or Linux `espeak`. (macOS `say` sounds surprisingly good — no API key needed.)
   - `elevenlabs` — natural cloud voice. Bring your own API key.
-- **Works from WSL and native Windows** — from WSL it reaches the Windows audio stack via
-  `powershell.exe` (SAPI speaks directly; ElevenLabs MP3 plays through Windows MediaPlayer), so
-  there's no audio-passthrough setup.
+- **A free built-in voice on every OS** — no API key required anywhere:
+  - **Windows / WSL** — Windows SAPI. From WSL it reaches the Windows audio stack via
+    `powershell.exe` (SAPI speaks directly; ElevenLabs MP3 plays through Windows MediaPlayer),
+    so there's no audio-passthrough setup.
+  - **macOS** — the built-in **`say`** command. Nothing to install, and its voices (Samantha,
+    Alex, the downloadable "enhanced" ones) sound noticeably better than Windows SAPI.
+  - **Linux** — `espeak` for the built-in voice (plus `ffplay` for ElevenLabs playback).
 - **Pick any voice** — `list_voices` / `set_voice`, an env default, or a per-line override.
 - **Non-blocking & interruptible** — speaking never stalls Claude; a new line can cut off the
   current one (barge-in) so it pivots to you mid-sentence.
