@@ -1,5 +1,6 @@
 # claude-talkback-mcp
 
+[![npm version](https://img.shields.io/npm/v/claude-talkback-mcp.svg)](https://www.npmjs.com/package/claude-talkback-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Gives Claude Code a **voice**. It speaks short, conversational, peer-style summaries of what
@@ -70,7 +71,14 @@ that's missing and how to install it, and every `speak` result warns you when a 
 
 ## Install
 
-**From GitHub — no clone, always current:**
+```bash
+npm install -g claude-talkback-mcp
+```
+
+<details>
+<summary>Other ways to install</summary>
+
+**Latest from GitHub (unreleased changes):**
 
 ```bash
 npm install -g github:jarvann/claude-talkback-mcp
@@ -83,6 +91,8 @@ git clone https://github.com/jarvann/claude-talkback-mcp
 cd claude-talkback-mcp
 npm install && npm run build
 ```
+
+</details>
 
 ## Register with Claude Code
 
