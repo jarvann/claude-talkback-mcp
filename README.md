@@ -38,6 +38,27 @@ Hear the difference — click to listen/download (GitHub doesn't autoplay audio 
 | `set_engine` | Toggle between `sapi` and `elevenlabs` at runtime. |
 | `voice_status` | Report the active engine + current voice, including whether it's male or female. |
 | `list_repo_voices` | Show the central registry — which voice each repo/project has been assigned. |
+| `check_setup` | Report platform, engine, and whether the required audio tool + key are installed (with fixes). |
+
+## Requirements
+
+This is a **Node/TypeScript** MCP server (no Python). Beyond Node, the only dependencies are the
+system audio tools — and Windows/WSL already ship them:
+
+- **Node.js ≥ 18.**
+- **Windows or WSL** (primary target): nothing extra. PowerShell + the built-in Windows speech
+  engine handle SAPI *and* ElevenLabs MP3 playback.
+- **macOS** (experimental): `say` is built in for the free voice; `brew install ffmpeg` adds the
+  `ffplay` used for ElevenLabs playback.
+- **Linux** (experimental): `sudo apt install espeak` for the free local voice, and
+  `sudo apt install ffmpeg` for ElevenLabs playback.
+- **ElevenLabs engine** (optional): an API key in `ELEVENLABS_API_KEY` + network access.
+
+If speech doesn't play, ask Claude to run **`check_setup`** — the server reports the exact tool
+that's missing and how to install it, and every `speak` result warns you when a backend is absent.
+
+> **Platform support:** built and tested for **WSL + Windows**. The macOS/Linux paths are
+> best-effort and less battle-tested; `check_setup` will tell you what's needed there.
 
 ## Build
 

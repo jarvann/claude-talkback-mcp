@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -647,4 +647,85 @@ export function backendInfo(): string {
     return `elevenlabs (voice=${elevenVoiceId}, model=${ELEVEN_MODEL}, key=${hasElevenKey() ? "set" : "MISSING"})`;
   }
   return `sapi (voice=${sapiVoice ?? "system default"}, rate=${RATE}) on ${PLATFORM}`;
+}
+
+// ---- dependency / setup diagnostics -----------------------------------------
+// The audio backend is a system tool, not an npm dependency. Windows/WSL ship
+// everything (PowerShell + built-in speech); macOS/Linux need a tool or two.
+// We probe for it so the MCP can tell the user exactly what's missing.
+
+export interface DepStatus {
+  platform: Platform;
+  engine: Engine;
+  backend: string; // command the active engine relies on
+  found: boolean;
+  install: string | null; // how to install it, if missing
+  note: string;
+}
+
+function commandExists(cmd: string): boolean {
+  if (!cmd) return false;
+  const probe = process.platform === "win32" ? "where" : "which";
+  try {
+    return spawnSync(probe, [cmd], { stdio: "ignore" }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function requiredBackend(forEngine: Engine): { cmd: string; install: string | null; note: string } {
+  if (PLATFORM === "wsl" || PLATFORM === "windows") {
+    return {
+      cmd: POWERSHELL,
+      install: null,
+      note: "PowerShell (built into Windows) drives both SAPI speech and ElevenLabs playback — no extra install.",
+    };
+  }
+  if (PLATFORM === "macos") {
+    return forEngine === "elevenlabs"
+      ? {
+          cmd: "ffplay",
+          install: "brew install ffmpeg",
+          note: "ElevenLabs MP3 playback uses ffplay (part of ffmpeg).",
+        }
+      : { cmd: "say", install: null, note: "Local speech uses the built-in macOS 'say' command." };
+  }
+  if (PLATFORM === "linux") {
+    return forEngine === "elevenlabs"
+      ? {
+          cmd: "ffplay",
+          install: "sudo apt install ffmpeg",
+          note: "ElevenLabs MP3 playback uses ffplay (part of ffmpeg).",
+        }
+      : { cmd: "espeak", install: "sudo apt install espeak", note: "Local speech uses espeak." };
+  }
+  return { cmd: "", install: null, note: "Unrecognized platform — no audio backend available." };
+}
+
+const depCache = new Map<Engine, DepStatus>();
+
+/** Whether the audio backend the given engine needs is installed. Cached. */
+export function checkDependencies(forEngine: Engine = engine): DepStatus {
+  const cached = depCache.get(forEngine);
+  if (cached) return cached;
+  const req = requiredBackend(forEngine);
+  const found = req.cmd ? commandExists(req.cmd) : false;
+  const status: DepStatus = {
+    platform: PLATFORM,
+    engine: forEngine,
+    backend: req.cmd || "(none)",
+    found,
+    install: found ? null : req.install,
+    note: req.note,
+  };
+  depCache.set(forEngine, status);
+  return status;
+}
+
+/** A one-line warning if the active engine's audio backend is missing, else null. */
+export function missingDependencyWarning(forEngine: Engine = engine): string | null {
+  const s = checkDependencies(forEngine);
+  if (s.found) return null;
+  const how = s.install ? ` Install it with: ${s.install}` : "";
+  return `Audio backend "${s.backend}" wasn't found on this ${s.platform} system, so speech can't play.${how}`;
 }

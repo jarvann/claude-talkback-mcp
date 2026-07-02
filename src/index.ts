@@ -14,6 +14,8 @@ import {
   getEngine,
   setEngine,
   ensureInitialized,
+  checkDependencies,
+  missingDependencyWarning,
   backendInfo,
 } from "./tts.js";
 
@@ -26,7 +28,7 @@ HOW TO USE IT:
 4. Keep turns short so the user can interrupt between them. If the user talks while you're narrating, pass interrupt:true on your next \`speak\` so the current line is cut off and you respond to them.
 5. Tone: warm, direct, first person, contractions. A collaborator, not a narrator. No preamble, no filler.
 
-Voices: each repo auto-picks its own voice on first load and remembers it, so different projects sound like different teammates. If the user asks who's talking, use \`voice_status\` to report the current voice and whether it's male/female. To change it, use \`set_voice\` — it takes a name ("brian"), a gender ("female"/"male", picks one of that gender), or "random", and saves the choice for this repo. \`list_voices\` shows the options; \`list_repo_voices\` shows which voice every repo has been assigned; \`set_engine\` toggles "sapi" (robotic, offline, free) vs "elevenlabs" (natural, needs the user's API key).`;
+Voices: each repo auto-picks its own voice on first load and remembers it, so different projects sound like different teammates. If the user asks who's talking, use \`voice_status\` to report the current voice and whether it's male/female. To change it, use \`set_voice\` — it takes a name ("brian"), a gender ("female"/"male", picks one of that gender), or "random", and saves the choice for this repo. \`list_voices\` shows the options; \`list_repo_voices\` shows which voice every repo has been assigned; \`set_engine\` toggles "sapi" (robotic, offline, free) vs "elevenlabs" (natural, needs the user's API key). If the user says they can't hear anything, call \`check_setup\` — it reports whether a required audio tool is missing and exactly how to install it.`;
 
 const server = new McpServer(
   { name: "claude-talkback", version: "0.3.0" },
@@ -56,8 +58,12 @@ server.registerTool(
   async ({ text, interrupt, voice }) => {
     const resolved = voice ? ((await resolveVoice(voice)) ?? undefined) : undefined;
     const r = speak(text, { interrupt: interrupt ?? false, voice: resolved });
+    const base = r.skipped ? "(nothing to speak)" : `🔊 ${r.spoken}`;
+    const warn = missingDependencyWarning();
     return {
-      content: [{ type: "text", text: r.skipped ? "(nothing to speak)" : `🔊 ${r.spoken}` }],
+      content: [
+        { type: "text", text: warn ? `${base}\n\n⚠️ ${warn} (run check_setup for details)` : base },
+      ],
     };
   },
 );
@@ -169,6 +175,33 @@ server.registerTool(
 );
 
 server.registerTool(
+  "check_setup",
+  {
+    title: "Check audio setup / dependencies",
+    description:
+      "Report the platform, active engine, Node version, and whether the required audio backend (and ElevenLabs key) are installed — with install instructions for anything missing. Use this if the user says they can't hear anything.",
+    inputSchema: {},
+  },
+  async () => {
+    const s = checkDependencies();
+    const lines = [
+      `Platform:      ${s.platform}`,
+      `Engine:        ${getEngine()}`,
+      `Node:          ${process.version}`,
+      `Audio backend: ${s.backend} — ${s.found ? "found ✅" : "MISSING ❌"}`,
+      s.note,
+    ];
+    if (getEngine() === "elevenlabs") {
+      lines.push(
+        `ElevenLabs key: ${process.env.ELEVENLABS_API_KEY ? "set ✅" : "MISSING ❌ — set ELEVENLABS_API_KEY"}`,
+      );
+    }
+    if (!s.found && s.install) lines.push("", `To fix: ${s.install}`);
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  },
+);
+
+server.registerTool(
   "set_engine",
   {
     title: "Switch speech engine",
@@ -187,4 +220,6 @@ server.registerTool(
 const transport = new StdioServerTransport();
 await server.connect(transport);
 await ensureInitialized(); // pick/restore this repo's voice before the first line
+const depWarn = missingDependencyWarning();
+if (depWarn) process.stderr.write(`[talkback] ⚠️ ${depWarn}\n`);
 process.stderr.write(`[talkback] ready — backend: ${backendInfo()}\n`);
